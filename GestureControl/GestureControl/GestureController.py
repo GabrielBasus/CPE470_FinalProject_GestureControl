@@ -7,10 +7,11 @@ import Jetson.GPIO as GPIO
 from geometry_msgs.msg import TwistStamped
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
+from std_msgs.msg import Int32
 
 GAP = 0.02
 N_AVG = 5
-GESTURE = {"Forward": "Thumb_Up", "Backwards": "Thumb_Down", "Idle": "Open_Palm", "Following": "Pointing_Up"}
+GESTURE = {"Forward": 6, "Backward": 5, "Idle": 0, "Following": 2, "Left": 3, "Right": 4}
 
 # Some common note frequencies (Hz)
 NOTES = {
@@ -42,7 +43,7 @@ class GestureController(Node):
 		self.scan = None
 
 		self.subscriber_ = self.create_subscription(
-			String,
+			Int32,
 			'gesture',
 			self.gesture_callback,
 			10)
@@ -82,8 +83,8 @@ class GestureController(Node):
 		self.loop()
 
 	def gesture_callback(self, msg):
-		gesture_name = msg.data.split(' ')[0].strip()
-		if gesture_name == GESTURE["Idle"]:
+		gesture_cmd = msg.data
+		if gesture_cmd == GESTURE["Idle"]:
 			self.state = "Idle"
 			self.get_logger().info('State set to Idle')
 			return
@@ -93,15 +94,19 @@ class GestureController(Node):
 			self.gesture = msg
 			self.get_logger().info('Gesture being processed: "%s"' % msg.data)
 
-		if gesture_name == GESTURE["Forward"]:
+		if gesture_cmd == GESTURE["Forward"]:
 			self.state = "Forward"
-		elif gesture_name == GESTURE["Backwards"]:
-			self.state = "Backwards"
-		elif gesture_name == GESTURE["Idle"]:
+		elif gesture_cmd == GESTURE["Backward"]:
+			self.state = "Backward"
+		elif gesture_cmd == GESTURE["Idle"]:
 			self.state = "Idle"
 			self.get_logger().info('State set to Idle')
-		elif gesture_name == GESTURE["Following"]:
+		elif gesture_cmd == GESTURE["Following"]:
 			self.state = "Following"
+		elif gesture_cmd == GESTURE["Left"]:
+			self.state = "Left"
+		elif gesture_cmd == GESTURE["Right"]:
+			self.state = "Right"
 		else:
 			self.get_logger().info('Unknown gesture: "%s"' % msg.data)
 
@@ -151,6 +156,20 @@ class GestureController(Node):
 			error = centroid_index - center_index
 			msg.twist.angular.z = 0.005 * error  # Proportional control
 			self.get_logger().info('Turning: "%s"' % .005*error)
+		elif self.state == "Left":
+			msg.twist.linear.x = 0.0
+			msg.twist.angular.z = -0.2
+			self.publisher_.publish(msg)
+			self.get_logger().info('State: Left, turning robot left')
+			self.tmr.reset()  # Reset the timer to start counting down from now
+			return
+		elif self.state == "Right":
+			msg.twist.linear.x = 0.0
+			msg.twist.angular.z = 0.4
+			self.publisher_.publish(msg)
+			self.get_logger().info('State: Right, turning robot right')
+			self.tmr.reset()  # Reset the timer to start counting down from now
+			return
 		elif self.state == "Recover":
 			if self.last_state == "Forward":
 				msg.twist.linear.x = -0.1
