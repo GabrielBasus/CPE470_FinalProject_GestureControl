@@ -84,9 +84,9 @@ class GestureController(Node):
 
 		if gesture_cmd == GESTURE["Forward"]:
 			self.state = "Forward"
-		elif gesture_name == GESTURE["Backwards"]:
+		elif gesture_cmd == GESTURE["Backwards"]:
 			self.state = "Backwards"
-		elif gesture_name == GESTURE["Idle"]:
+		elif gesture_cmd == GESTURE["Idle"]:
 			self.state = "Idle"
 			self.get_logger().info('State set to Idle')
 		elif gesture_cmd == GESTURE["Following"]:
