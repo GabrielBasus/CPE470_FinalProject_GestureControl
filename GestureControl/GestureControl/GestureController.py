@@ -1,11 +1,14 @@
+from time import time
+
 import rclpy
 from rclpy.node import Node
+import Jetson.GPIO as GPIO
 
 from geometry_msgs.msg import TwistStamped
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import String
 from std_msgs.msg import Int32
 
+GAP = 0.02
 N_AVG = 5
 GESTURE = {"Forward": 6, "Backward": 5, "Idle": 0, "Following": 2, "Left": 3, "Right": 4}
 
@@ -56,6 +59,14 @@ class GestureController(Node):
 		self.DistanceThreshold = 0.4  # meters
 		self.command_processing = False
 
+		#set up GPIO for buzzer
+		GPIO.setmode(GPIO.BOARD)
+		output_pin = 7 
+		GPIO.setup(output_pin, GPIO.OUT)
+		self.p = GPIO.PWM(output_pin, 440)
+		self.p.start(0)
+		self.play_sequence("startup")
+
 	def timer_callback(self):
 		self.state = "Idle"
 		self.tmr.cancel()  # Stop the timer until the next gesture is received
@@ -65,9 +76,9 @@ class GestureController(Node):
 		ranges = self.scan.ranges
 		danger_zone = [r for r in ranges if r <= self.DistanceThreshold]
 		if danger_zone:
-			self.state = "Idle"
-			self.get_logger().info('Obstacle detected within %f meters, stopping robot' % self.DistanceThreshold)
-
+			self.last_state = self.state
+			self.state = "Recover"
+			self.get_logger().info('Obstacle detected within %f meters, stopping robot after recovery' % self.DistanceThreshold)
 		self.loop()
 
 	def gesture_callback(self, msg):
@@ -167,6 +178,26 @@ class GestureController(Node):
 				msg.twist.linear.x = 0.1
 			
 			self.publisher_.publish(msg)
+			time.sleep(0.25)  # Move for a short duration to recover
+
+			msg.twist.linear.x = 0.0
+			self.publisher_.publish(msg)
+
+	def play_sequence(self, tune_name):
+		seq = TUNES[tune_name]
+		for note_name, dur in seq:
+			freq = NOTES[note_name]
+			
+			if note_name == "REST":
+				self.p.ChangeDutyCycle(0)
+				time.sleep(dur)
+			else:
+				self.p.ChangeFrequency(freq)
+				self.p.ChangeDutyCycle(50)
+				time.sleep(dur)
+				self.p.ChangeDutyCycle(0)
+
+			time.sleep(GAP)
 
 def main(args=None):
     rclpy.init(args=args)
@@ -179,6 +210,8 @@ def main(args=None):
     # (optional - otherwise it will be done automatically
     # when the garbage collector destroys the node object)
     minimal_publisher.destroy_node()
+    minimal_publisher.p.stop()
+    GPIO.cleanup()
     rclpy.shutdown()
 
 
